@@ -2,7 +2,13 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.widgets import RadioButtons, Slider
 
-from physics import compute_profiles, solve, warmup
+from physics import (
+    compute_profiles,
+    kinetic_inner_entropy_curve,
+    kinetic_local_quantities,
+    solve,
+    warmup,
+)
 
 # ==========================================
 # INTERACTIVE PLOT (MATPLOTLIB)
@@ -27,7 +33,7 @@ warmup()
 fig = plt.figure(figsize=(10, 8))
 plt.subplots_adjust(left=0.1, bottom=0.50, right=0.9, top=0.9)
 
-ax_plot = fig.add_subplot(111)
+ax_plot = fig.add_axes([0.10, 0.64, 0.80, 0.26])
 ax_plot.set_xlabel("Radius $r$ (lattice sites)")
 ax_plot.set_ylabel("Density / Occupation per site")
 ax_plot.set_title("Thermodynamics of 2D Lattice Fermions (Atomic + Kinetic)")
@@ -52,6 +58,37 @@ ax_inset.set_title("Trap V(r)", fontsize=9)
 ax_inset.set_xlabel("r", fontsize=8)
 ax_inset.set_ylabel("V/Δ", fontsize=8)
 ax_inset.tick_params(labelsize=8)
+
+# Entropy-vs-μ panel (kinetic mode)
+ax_mu_entropy = fig.add_axes([0.10, 0.40, 0.80, 0.17])
+line_s_mu, = ax_mu_entropy.plot([], [], color="navy", lw=2, label=r"$s_{\mathrm{inner}}(\mu)$")
+line_mu_marker = ax_mu_entropy.axvline(0.0, color="crimson", ls="--", lw=1.2, label="Solved μ")
+point_mu_marker, = ax_mu_entropy.plot([], [], "o", color="crimson", ms=5)
+text_mu_mode = ax_mu_entropy.text(
+    0.02,
+    0.90,
+    "Kinetic mode only",
+    transform=ax_mu_entropy.transAxes,
+    fontsize=9,
+    color="gray",
+    va="top",
+)
+ax_mu_entropy.set_xlabel("Chemical potential μ (Δ)")
+ax_mu_entropy.set_ylabel("Local entropy (inner box)")
+ax_mu_entropy.set_xlim(-1.0, 2.0)
+ax_mu_entropy.grid(True, linestyle="--", alpha=0.6)
+ax_mu_entropy.legend(loc="upper right")
+
+ax_mu_inset = ax_mu_entropy.inset_axes([0.08, 0.56, 0.37, 0.37])
+line_s_mu_inset, = ax_mu_inset.plot([], [], color="navy", lw=1.5)
+line_mu_marker_inset = ax_mu_inset.axvline(0.0, color="crimson", ls="--", lw=1.0)
+point_mu_marker_inset, = ax_mu_inset.plot([], [], "o", color="crimson", ms=4)
+ax_mu_inset.set_title("Inset: s ∈ [0, 0.2]", fontsize=8)
+ax_mu_inset.set_xlabel("μ", fontsize=8)
+ax_mu_inset.set_ylabel("s", fontsize=8)
+ax_mu_inset.tick_params(labelsize=8)
+ax_mu_inset.set_xlim(-1.0, 2.0)
+ax_mu_inset.set_ylim(0.0, 0.2)
 
 # Text Output
 text_res = plt.figtext(
@@ -202,6 +239,40 @@ def update(event):
         text_wall.set_position((val_R2, y_top * 0.96))
         ax_inset.set_xlim(0.0, max(1.0, val_R2 * 1.05))
         ax_inset.set_ylim(-0.05, y_top)
+
+        if model == "kinetic":
+            mu_curve, s_curve = kinetic_inner_entropy_curve(
+                T_sol, t_hop=val_t_hop, nk=220, mu_min=-1.0, mu_max=2.0, n_points=260
+            )
+            s_inner = kinetic_local_quantities(mu_sol, T_sol, t_hop=val_t_hop, nk=220)["s_site"]
+
+            line_s_mu.set_data(mu_curve, s_curve)
+            line_mu_marker.set_xdata([mu_sol, mu_sol])
+            point_mu_marker.set_data([mu_sol], [s_inner])
+            text_mu_mode.set_visible(False)
+            y_hi = max(0.22, float(np.max(s_curve)) * 1.05)
+            ax_mu_entropy.set_ylim(0.0, y_hi)
+            ax_mu_entropy.set_title(
+                f"Inner-box entropy vs μ (R1={val_R1:.2f}, R2={val_R2:.2f}, t={val_t_hop:.2f})"
+            )
+
+            line_s_mu_inset.set_data(mu_curve, s_curve)
+            line_mu_marker_inset.set_xdata([mu_sol, mu_sol])
+            if 0.0 <= s_inner <= 0.2:
+                point_mu_marker_inset.set_data([mu_sol], [s_inner])
+            else:
+                point_mu_marker_inset.set_data([], [])
+        else:
+            line_s_mu.set_data([], [])
+            line_mu_marker.set_xdata([0.0, 0.0])
+            point_mu_marker.set_data([], [])
+            text_mu_mode.set_visible(True)
+            ax_mu_entropy.set_ylim(0.0, 0.25)
+            ax_mu_entropy.set_title("Inner-box entropy vs μ (kinetic mode only)")
+
+            line_s_mu_inset.set_data([], [])
+            line_mu_marker_inset.set_xdata([0.0, 0.0])
+            point_mu_marker_inset.set_data([], [])
     else:
         text_res.set_text(reason or "Solver Failed! Try different parameters.")
         text_res.set_color("red")
